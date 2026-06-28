@@ -21,7 +21,7 @@ const captureCount = $("captureCount");
 
 const historyKey = "scanToPdf.history.v2";
 const settingsKey = "scanToPdf.settings.v2";
-const defaultSettings = { paper: "a4", quality: "0.82", filter: "scan", brightness: "0", contrast: "18" };
+const defaultSettings = { paper: "a4", quality: "0.82", filter: "scan", brightness: "0", contrast: "8" };
 const points = ["tl", "tr", "br", "bl"];
 const edges = [
   ["top", "tl", "tr"],
@@ -264,13 +264,12 @@ function openEdit(canvas, corners, pageId = null) {
     pageId,
     source: canvas,
     corners: corners || defaultCorners(canvas.width, canvas.height),
-    preview: null,
   };
   $("filterSelect").value = appSettings.filter;
   $("brightnessRange").value = appSettings.brightness;
   $("contrastRange").value = appSettings.contrast;
   drawEdit();
-  updateEditPreview();
+  updateEditSettings();
 }
 
 function cancelEdit() {
@@ -288,7 +287,6 @@ function autoDetectEdit() {
   if (!editing) return;
   editing.corners = detectDocumentCorners(editing.source, false) || defaultCorners(editing.source.width, editing.source.height);
   drawEdit();
-  updateEditPreview();
 }
 
 function drawEdit() {
@@ -307,7 +305,7 @@ function drawEdit() {
   editOverlay.style.left = `${(wrap.clientWidth - displayWidth) / 2}px`;
   editOverlay.style.top = `${(wrap.clientHeight - displayHeight) / 2}px`;
   editOverlay.setAttribute("viewBox", `0 0 ${source.width} ${source.height}`);
-  editCanvas.getContext("2d").drawImage(editing.preview || source, 0, 0, source.width, source.height);
+  editCanvas.getContext("2d").drawImage(source, 0, 0, source.width, source.height);
   drawEditOverlay();
 }
 
@@ -367,7 +365,6 @@ function moveOverlayDrag(event) {
     editing.corners[drag.b] = clampPoint({ x: drag.corners[drag.b].x + dx, y: drag.corners[drag.b].y + dy });
   }
   drawEditOverlay();
-  updateEditPreview();
 }
 
 function endOverlayDrag() {
@@ -408,6 +405,10 @@ function clampPoint(point) {
 }
 
 function updateEditPreview() {
+  updateEditSettings();
+}
+
+function updateEditSettings() {
   if (!editing) return;
   appSettings = {
     ...appSettings,
@@ -416,23 +417,6 @@ function updateEditPreview() {
     contrast: $("contrastRange").value,
   };
   localStorage.setItem(settingsKey, JSON.stringify(appSettings));
-  const warped = warpQuad(editing.source, editing.corners);
-  editing.preview = placePreviewOnSource(applyFilter(warped), editing.source.width, editing.source.height);
-  drawEdit();
-}
-
-function placePreviewOnSource(preview, width, height) {
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#1c252b";
-  ctx.fillRect(0, 0, width, height);
-  const scale = Math.min(width * 0.82 / preview.width, height * 0.82 / preview.height);
-  const w = preview.width * scale;
-  const h = preview.height * scale;
-  ctx.drawImage(preview, (width - w) / 2, (height - h) / 2, w, h);
-  return canvas;
 }
 
 function commitEdit(destination) {
@@ -690,12 +674,16 @@ function detectDocumentCorners(canvas, allowNull) {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   const image = ctx.getImageData(0, 0, w, h);
   const data = image.data;
-  const step = Math.max(2, Math.round(Math.max(w, h) / 420));
+  const step = Math.max(4, Math.round(Math.max(w, h) / 240));
+  const cols = Math.floor(w / step);
+  const rows = Math.floor(h / step);
   const brightness = [];
   let total = 0;
 
-  for (let y = 0; y < h; y += step) {
-    for (let x = 0; x < w; x += step) {
+  for (let gy = 0; gy < rows; gy++) {
+    for (let gx = 0; gx < cols; gx++) {
+      const x = gx * step;
+      const y = gy * step;
       const i = (y * w + x) * 4;
       const value = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
       brightness.push(value);
@@ -705,26 +693,30 @@ function detectDocumentCorners(canvas, allowNull) {
 
   const mean = total / Math.max(1, brightness.length);
   brightness.sort((a, b) => a - b);
-  const high = brightness[Math.floor(brightness.length * 0.72)] || mean;
-  const threshold = Math.max(118, Math.min(210, (mean + high) / 2 + 8));
-  const hits = [];
+  const high = brightness[Math.floor(brightness.length * 0.78)] || mean;
+  const threshold = Math.max(126, Math.min(218, (mean + high) / 2 + 12));
+  const cells = new Uint8Array(cols * rows);
 
-  for (let y = step; y < h - step; y += step) {
-    for (let x = step; x < w - step; x += step) {
+  for (let gy = 1; gy < rows - 1; gy++) {
+    for (let gx = 1; gx < cols - 1; gx++) {
+      const x = gx * step;
+      const y = gy * step;
       const i = (y * w + x) * 4;
       const r = data[i];
       const g = data[i + 1];
       const b = data[i + 2];
       const gray = r * 0.299 + g * 0.587 + b * 0.114;
       const sat = Math.max(r, g, b) - Math.min(r, g, b);
-      const gx = grayAt(data, w, x + step, y) - grayAt(data, w, x - step, y);
-      const gy = grayAt(data, w, x, y + step) - grayAt(data, w, x, y - step);
-      const edge = Math.hypot(gx, gy);
-      if ((gray > threshold && sat < 72) || (gray > mean + 18 && edge > 24)) hits.push({ x, y });
+      const gradX = grayAt(data, w, x + step, y) - grayAt(data, w, x - step, y);
+      const gradY = grayAt(data, w, x, y + step) - grayAt(data, w, x, y - step);
+      const edge = Math.hypot(gradX, gradY);
+      if (gray > threshold && sat < 78 && edge < 95) cells[gy * cols + gx] = 1;
     }
   }
 
-  if (hits.length < 60) return allowNull ? null : defaultCorners(w, h);
+  const component = largestDocumentComponent(cells, cols, rows, step, w, h);
+  if (!component || component.points.length < 48) return allowNull ? null : defaultCorners(w, h);
+  const hits = component.points;
   const c = {
     tl: extreme(hits, (p) => p.x + p.y, false),
     tr: extreme(hits, (p) => p.x - p.y, true),
@@ -733,7 +725,58 @@ function detectDocumentCorners(canvas, allowNull) {
   };
   const area = polygonArea(c);
   if (area < w * h * 0.1 || !isReasonableQuad(c, w, h)) return allowNull ? null : defaultCorners(w, h);
-  return insetQuad(c, w, h, 0.015);
+  return insetQuad(c, w, h, 0.006);
+}
+
+function largestDocumentComponent(cells, cols, rows, step, w, h) {
+  const seen = new Uint8Array(cells.length);
+  let best = null;
+  const queue = [];
+  const minArea = w * h * 0.08;
+
+  for (let index = 0; index < cells.length; index++) {
+    if (!cells[index] || seen[index]) continue;
+    queue.length = 0;
+    queue.push(index);
+    seen[index] = 1;
+    const pointsList = [];
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = 0;
+    let maxY = 0;
+    let touches = 0;
+
+    for (let cursor = 0; cursor < queue.length; cursor++) {
+      const current = queue[cursor];
+      const cx = current % cols;
+      const cy = Math.floor(current / cols);
+      const x = cx * step;
+      const y = cy * step;
+      pointsList.push({ x, y });
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+      if (cx <= 1 || cy <= 1 || cx >= cols - 2 || cy >= rows - 2) touches++;
+
+      for (const next of [current - 1, current + 1, current - cols, current + cols]) {
+        if (next < 0 || next >= cells.length || seen[next] || !cells[next]) continue;
+        const nx = next % cols;
+        const wrapped = Math.abs(nx - cx) > 1;
+        if (wrapped) continue;
+        seen[next] = 1;
+        queue.push(next);
+      }
+    }
+
+    const boxArea = (maxX - minX) * (maxY - minY);
+    const borderRatio = touches / Math.max(1, pointsList.length);
+    const score = pointsList.length * (borderRatio > 0.22 ? 0.25 : 1);
+    if (boxArea >= minArea && (!best || score > best.score)) {
+      best = { points: pointsList, score };
+    }
+  }
+  return best;
 }
 
 function grayAt(data, width, x, y) {
@@ -849,7 +892,7 @@ function applyFilter(canvas) {
   const ctx = out.getContext("2d");
   ctx.drawImage(canvas, 0, 0);
   const image = ctx.getImageData(0, 0, out.width, out.height);
-  const factor = 1 + contrast / 60;
+  const factor = 1 + contrast / 95;
 
   for (let i = 0; i < image.data.length; i += 4) {
     let r = (image.data[i] - 128) * factor + 128 + brightness;
@@ -857,12 +900,15 @@ function applyFilter(canvas) {
     let b = (image.data[i + 2] - 128) * factor + 128 + brightness;
     const gray = r * 0.299 + g * 0.587 + b * 0.114;
     if (mode === "gray") r = g = b = gray;
-    if (mode === "scan") r = g = b = clamp((gray - 116) * 1.55 + 184, 0, 255);
+    if (mode === "scan") {
+      const lifted = gray > 170 ? gray + 20 : gray;
+      r = g = b = clamp((lifted - 128) * 1.08 + 142, 0, 255);
+    }
     if (mode === "ink") {
-      const ink = gray > 185 ? 255 : clamp((gray - 80) * 1.85, 0, 255);
+      const ink = gray > 198 ? 255 : clamp((gray - 68) * 1.35, 0, 255);
       r = g = b = ink;
     }
-    if (mode === "bw") r = g = b = gray > 154 ? 255 : 18;
+    if (mode === "bw") r = g = b = gray > 168 ? 255 : 28;
     image.data[i] = clamp(r, 0, 255);
     image.data[i + 1] = clamp(g, 0, 255);
     image.data[i + 2] = clamp(b, 0, 255);
