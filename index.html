@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <title>Scan to PDF</title>
-    <link rel="stylesheet" href="styles.css?v=20260629-6" />
+    <link rel="stylesheet" href="styles.css?v=20260629-7" />
   </head>
   <body>
     <main class="app">
@@ -50,33 +50,40 @@
             <option value="auto">フラッシュ 自動</option>
             <option value="on">フラッシュ オン</option>
           </select>
-          <select id="captureModeSelect" class="flashSelect">
-            <option value="document">文書</option>
+        </div>
+        <div class="captureBottom">
+          <select id="captureModeSelect" class="modeSelect">
+            <option value="document">ドキュメント</option>
             <option value="whiteboard">ホワイトボード</option>
-            <option value="receipt">領収書</option>
+            <option value="receipt">名刺</option>
             <option value="photo">写真</option>
           </select>
+          <button id="captureBtn" class="shutterButton" type="button" disabled aria-label="撮影"></button>
+          <button id="reviewFromCaptureBtn" class="reviewBubble" type="button" disabled>
+            <span id="captureCount">0</span>
+          </button>
         </div>
-        <button id="captureBtn" class="shutterButton" type="button" disabled aria-label="撮影"></button>
-        <button id="reviewFromCaptureBtn" class="reviewBubble" type="button" disabled>
-          <span id="captureCount">0</span>
-        </button>
       </section>
 
       <section class="editScreen screen" id="editScreen" hidden>
-        <header class="workHeader">
-          <button id="cancelEditBtn" class="ghostButton" type="button">戻る</button>
-          <h1>補正</h1>
-          <div class="headerActions">
-            <button id="viewModeBtn" type="button">元写真</button>
-            <button id="autoDetectBtn" type="button">自動</button>
-          </div>
-        </header>
+        <button id="cancelEditBtn" class="backChevron" type="button" aria-label="戻る">‹</button>
         <div class="canvasWrap" id="canvasWrap">
           <canvas id="editCanvas"></canvas>
           <svg id="editOverlay" class="editOverlay" aria-hidden="true"></svg>
+          <div class="editSideTools">
+            <button id="rotateEditBtn" type="button">回転</button>
+            <button id="retakeEditBtn" type="button">撮り直し</button>
+            <button id="autoDetectBtn" type="button">再設定</button>
+          </div>
         </div>
         <div class="editTray">
+          <div class="editThumbRow">
+            <button id="viewModeBtn" class="editThumb active" type="button">切取</button>
+            <label class="editThumb addThumb">
+              ＋
+              <input id="editFileInput" type="file" accept="image/*" multiple />
+            </label>
+          </div>
           <div class="editTools">
           <label>
             仕上げ
@@ -100,17 +107,17 @@
           </label>
           </div>
           <div class="editActions">
-            <button id="addAndShootBtn" type="button">追加して撮影</button>
-            <button id="addAndReviewBtn" class="primaryAction" type="button">追加画面へ</button>
+            <button id="addAndShootBtn" type="button">さらに追加</button>
+            <button id="addAndReviewBtn" class="primaryAction" type="button">レビューと編集 ›</button>
           </div>
         </div>
       </section>
 
       <section class="reviewScreen screen" id="reviewScreen" hidden>
         <header class="workHeader">
-          <button id="backToHomeBtn" class="ghostButton" type="button">×</button>
+          <button id="backToHomeBtn" class="backChevron" type="button" aria-label="閉じる">‹</button>
           <div>
-            <h1>追加</h1>
+            <h1>レビューと編集</h1>
             <p id="reviewStatus">PDFに追加するページを確認できます。</p>
           </div>
           <button id="shareBtn" class="primarySmall" type="button" disabled>共有</button>
@@ -126,17 +133,17 @@
               <option value="image">画像サイズ</option>
             </select>
           </label>
-          <button id="backToCaptureBtn" type="button">撮影</button>
+          <button id="backToCaptureBtn" type="button">さらに追加</button>
           <label class="fileButton">
             追加
             <input id="fileInput" type="file" accept="image/*" multiple />
           </label>
-          <button id="downloadBtn" type="button" disabled>PDF</button>
+          <button id="downloadBtn" class="primaryAction" type="button" disabled>完了</button>
           <button id="jpegBtn" type="button" disabled>JPEG</button>
         </div>
       </section>
     </main>
 
-    <script src="app.js?v=20260629-6"></script>
+    <script src="app.js?v=20260629-7"></script>
   </body>
 </html>

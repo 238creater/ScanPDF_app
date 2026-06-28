@@ -51,6 +51,7 @@ let lastPdfBlob = null;
 $("newScanBtn").addEventListener("click", () => startProject(true));
 $("homeFileInput").addEventListener("change", addHomeFiles);
 $("fileInput").addEventListener("change", addFiles);
+$("editFileInput").addEventListener("change", addEditFiles);
 $("closeCaptureBtn").addEventListener("click", showReviewOrHome);
 $("captureBtn").addEventListener("click", capturePhoto);
 $("reviewFromCaptureBtn").addEventListener("click", showReview);
@@ -58,6 +59,8 @@ $("backToCaptureBtn").addEventListener("click", showCapture);
 $("backToHomeBtn").addEventListener("click", showHome);
 $("cancelEditBtn").addEventListener("click", cancelEdit);
 $("autoDetectBtn").addEventListener("click", autoDetectEdit);
+$("rotateEditBtn").addEventListener("click", rotateEdit);
+$("retakeEditBtn").addEventListener("click", retakeEdit);
 $("viewModeBtn").addEventListener("click", toggleEditView);
 $("addAndShootBtn").addEventListener("click", () => commitEdit("capture"));
 $("addAndReviewBtn").addEventListener("click", () => commitEdit("review"));
@@ -294,6 +297,17 @@ async function addFiles(event) {
   openNextPendingImage();
 }
 
+async function addEditFiles(event) {
+  const canvases = await filesToCanvases(event.target.files);
+  event.target.value = "";
+  if (!canvases.length) return;
+  if (editing) saveEditingPage();
+  pendingCanvases.push(...canvases);
+  editReturnScreen = "review";
+  editing = null;
+  openNextPendingImage();
+}
+
 function filesToCanvases(fileList) {
   return Promise.all([...fileList].map(fileToCanvas));
 }
@@ -329,7 +343,7 @@ function openEdit(canvas, corners, pageId = null) {
     pageId,
     source: canvas,
     corners: corners || defaultCorners(canvas.width, canvas.height),
-    viewMode: "crop",
+    viewMode: "original",
   };
   appSettings = normalizeSettings(appSettings);
   $("filterSelect").value = appSettings.filter;
@@ -354,8 +368,8 @@ function showReviewOrCapture() {
 function autoDetectEdit() {
   if (!editing) return;
   editing.corners = detectDocumentCorners(editing.source, false) || defaultCorners(editing.source.width, editing.source.height);
+  editing.viewMode = "original";
   drawEdit();
-  updateEditPreview();
 }
 
 function drawEdit() {
@@ -448,6 +462,21 @@ function endOverlayDrag() {
   drag = null;
 }
 
+function rotateEdit() {
+  if (!editing) return;
+  const rotated = rotateCanvasClockwise(editing.source);
+  editing.corners = rotateCornersClockwise(editing.corners, editing.source.height);
+  editing.source = rotated;
+  editing.viewMode = "original";
+  drawEdit();
+}
+
+function retakeEdit() {
+  editing = null;
+  pendingCanvases = [];
+  showCapture();
+}
+
 function toggleEditView() {
   if (!editing) return;
   editing.viewMode = editing.viewMode === "crop" ? "original" : "crop";
@@ -507,6 +536,13 @@ function updateEditSettings() {
 
 function commitEdit(destination) {
   if (!editing) return;
+  saveEditingPage();
+  editing = null;
+  if (destination === "capture") showCapture();
+  else showReview();
+}
+
+function saveEditingPage() {
   const cropped = warpQuad(editing.source, editing.corners);
   const processed = applyFilter(cropped);
   const page = {
@@ -519,12 +555,9 @@ function commitEdit(destination) {
   const index = pages.findIndex((item) => item.id === page.id);
   if (index >= 0) pages[index] = page;
   else pages.push(page);
-  editing = null;
   lastPdfBlob = null;
   saveProject();
   updateCount();
-  if (destination === "capture") showCapture();
-  else showReview();
 }
 
 function renderPages() {
@@ -539,9 +572,9 @@ function renderPages() {
     const tools = document.createElement("div");
     tools.className = "pageTools";
     tools.append(
-      toolButton("↑", () => movePage(index, -1), index === 0),
-      toolButton("↓", () => movePage(index, 1), index === pages.length - 1),
-      toolButton("補正", () => openEdit(page.original, structuredClone(page.corners), page.id)),
+      toolButton("トリミング", () => openEdit(page.original, structuredClone(page.corners), page.id)),
+      toolButton("インク", () => openEdit(page.original, structuredClone(page.corners), page.id)),
+      toolButton("回転", () => rotatePage(index)),
       toolButton("削除", () => deletePage(index), false, "deleteBtn"),
     );
     li.append(img, tools);
@@ -579,6 +612,24 @@ function movePage(index, delta) {
   const next = index + delta;
   if (next < 0 || next >= pages.length) return;
   [pages[index], pages[next]] = [pages[next], pages[index]];
+  lastPdfBlob = null;
+  renderPages();
+  saveProject();
+}
+
+function rotatePage(index) {
+  const page = pages[index];
+  if (!page) return;
+  const original = rotateCanvasClockwise(page.original);
+  const cropped = rotateCanvasClockwise(page.cropped);
+  const corners = defaultCorners(original.width, original.height);
+  pages[index] = {
+    ...page,
+    original,
+    corners,
+    cropped,
+    processed: applyFilter(cropped),
+  };
   lastPdfBlob = null;
   renderPages();
   saveProject();
@@ -1020,6 +1071,26 @@ function warpQuad(source, c) {
   }
   dstCtx.putImageData(dst, 0, 0);
   return output;
+}
+
+function rotateCanvasClockwise(source) {
+  const output = document.createElement("canvas");
+  output.width = source.height;
+  output.height = source.width;
+  const ctx = output.getContext("2d");
+  ctx.translate(output.width, 0);
+  ctx.rotate(Math.PI / 2);
+  ctx.drawImage(source, 0, 0);
+  return output;
+}
+
+function rotateCornersClockwise(corners, sourceHeight) {
+  return {
+    tl: { x: sourceHeight - corners.bl.y, y: corners.bl.x },
+    tr: { x: sourceHeight - corners.tl.y, y: corners.tl.x },
+    br: { x: sourceHeight - corners.tr.y, y: corners.tr.x },
+    bl: { x: sourceHeight - corners.br.y, y: corners.br.x },
+  };
 }
 
 function lerpPoint(a, b, t) {
