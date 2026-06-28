@@ -1036,6 +1036,37 @@ function sample(src, w, h, x, y, out, offset) {
   out[offset + 3] = 255;
 }
 
+function toneStats(data) {
+  const values = [];
+  const stride = Math.max(4, Math.floor(data.length / 22000 / 4) * 4);
+  for (let i = 0; i < data.length; i += stride) {
+    values.push(data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+  }
+  values.sort((a, b) => a - b);
+  return {
+    low: percentile(values, 0.07),
+    mid: percentile(values, 0.5),
+    high: percentile(values, 0.93),
+  };
+}
+
+function percentile(values, ratio) {
+  if (!values.length) return 128;
+  return values[Math.min(values.length - 1, Math.max(0, Math.round((values.length - 1) * ratio)))];
+}
+
+function documentTone(gray, stats, preset) {
+  const low = Math.min(stats.low, stats.mid - 10);
+  const high = Math.max(stats.high, low + 48);
+  const normalized = clamp((gray - low) / (high - low), 0, 1);
+  let value = preset.white * Math.pow(normalized, preset.gamma);
+
+  if (normalized < 0.34) value = value * preset.darkScale + preset.darkOffset;
+  if (normalized > 0.68) value += (255 - value) * preset.paperLift;
+
+  return clamp(value, preset.blackFloor, 255);
+}
+
 function applyFilter(canvas) {
   const mode = normalizeFilter($("filterSelect").value);
   const brightness = Number($("brightnessRange").value);
@@ -1047,6 +1078,12 @@ function applyFilter(canvas) {
   ctx.drawImage(canvas, 0, 0);
   const image = ctx.getImageData(0, 0, out.width, out.height);
   const factor = 1 + contrast / 130;
+  const stats = toneStats(image.data);
+  const presets = {
+    document: { white: 245, gamma: 0.82, paperLift: 0.24, darkScale: 0.88, darkOffset: 4, blackFloor: 18 },
+    receipt: { white: 250, gamma: 0.78, paperLift: 0.34, darkScale: 0.82, darkOffset: 2, blackFloor: 14 },
+    whiteboard: { white: 252, gamma: 0.7, paperLift: 0.48, darkScale: 0.76, darkOffset: 0, blackFloor: 10 },
+  };
 
   for (let i = 0; i < image.data.length; i += 4) {
     let r = (image.data[i] - 128) * factor + 128 + brightness;
@@ -1060,18 +1097,14 @@ function applyFilter(canvas) {
       continue;
     }
     if (mode === "document") {
-      const lift = gray > 205 ? 10 : gray > 180 ? 5 : 0;
-      r = clamp(r + lift, 0, 255);
-      g = clamp(g + lift, 0, 255);
-      b = clamp(b + lift, 0, 255);
+      const tone = documentTone(gray, stats, presets.document);
+      r = g = b = tone;
     }
     if (mode === "receipt") {
-      const receiptGray = gray > 205 ? gray + (255 - gray) * 0.18 : gray * 0.98 + 4;
-      r = g = b = clamp(receiptGray, 0, 255);
+      r = g = b = documentTone(gray, stats, presets.receipt);
     }
     if (mode === "whiteboard") {
-      const boardGray = gray > 188 ? gray + (255 - gray) * 0.36 : gray * 0.92 + 6;
-      r = g = b = clamp(boardGray, 0, 255);
+      r = g = b = documentTone(gray, stats, presets.whiteboard);
     }
     if (mode === "gray") r = g = b = gray;
     if (mode === "ink") {
