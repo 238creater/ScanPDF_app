@@ -208,13 +208,43 @@ async function updateFlash() {
 
 async function capturePhoto() {
   if (!camera.videoWidth) return;
-  const canvas = document.createElement("canvas");
-  canvas.width = camera.videoWidth;
-  canvas.height = camera.videoHeight;
-  canvas.getContext("2d").drawImage(camera, 0, 0);
-  const corners = liveCorners ? structuredClone(liveCorners) : detectDocumentCorners(canvas, false);
+  const { canvas, offsetX, offsetY, scale } = captureVisibleVideoFrame();
+  const corners = liveCorners
+    ? translateCorners(liveCorners, offsetX, offsetY, scale, canvas.width, canvas.height)
+    : detectDocumentCorners(canvas, false);
   stopLiveDetection();
   openEdit(canvas, corners);
+}
+
+function captureVisibleVideoFrame() {
+  const rect = camera.getBoundingClientRect();
+  const videoW = camera.videoWidth;
+  const videoH = camera.videoHeight;
+  const displayW = Math.max(1, rect.width);
+  const displayH = Math.max(1, rect.height);
+  const coverScale = Math.max(displayW / videoW, displayH / videoH);
+  const visibleW = displayW / coverScale;
+  const visibleH = displayH / coverScale;
+  const sx = Math.max(0, (videoW - visibleW) / 2);
+  const sy = Math.max(0, (videoH - visibleH) / 2);
+  const longSide = 1800;
+  const outputScale = Math.min(1, longSide / Math.max(visibleW, visibleH));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(visibleW * outputScale);
+  canvas.height = Math.round(visibleH * outputScale);
+  canvas.getContext("2d").drawImage(camera, sx, sy, visibleW, visibleH, 0, 0, canvas.width, canvas.height);
+  return { canvas, offsetX: sx, offsetY: sy, scale: outputScale };
+}
+
+function translateCorners(corners, offsetX, offsetY, scale, width, height) {
+  const translated = {};
+  for (const name of points) {
+    translated[name] = {
+      x: clamp((corners[name].x - offsetX) * scale, 0, width),
+      y: clamp((corners[name].y - offsetY) * scale, 0, height),
+    };
+  }
+  return polygonArea(translated) > width * height * 0.08 ? translated : defaultCorners(width, height);
 }
 
 async function addHomeFiles(event) {

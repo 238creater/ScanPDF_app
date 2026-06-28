@@ -341,8 +341,8 @@ input[type="range"] {
 .canvasWrap {
   position: relative;
   width: 100%;
-  height: min(62dvh, 620px);
-  min-height: 360px;
+  height: calc(100dvh - 238px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  min-height: 430px;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -457,5 +457,10 @@ input[type="range"] {
 
   .workHeader {
     grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .canvasWrap {
+    height: calc(100dvh - 216px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    min-height: 470px;
   }
 }
