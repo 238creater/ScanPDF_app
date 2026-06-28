@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Scan to PDF</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="home screen" id="homeScreen">
+        <header class="homeHeader">
+          <div>
+            <h1>Scan to PDF</h1>
+            <p id="homeStatus">紙を撮ってPDFにできます。</p>
+          </div>
+        </header>
+
+        <section class="homeSection">
+          <div class="sectionHeader">
+            <h2>履歴</h2>
+            <button id="clearHistoryBtn" type="button">履歴削除</button>
+          </div>
+          <ol id="historyList" class="historyList"></ol>
+          <p id="emptyHistory" class="emptyText">まだ履歴はありません。</p>
+        </section>
+
+        <section class="homeSection">
+          <div class="sectionHeader">
+            <h2>設定</h2>
+            <button id="resetSettingsBtn" type="button">初期化</button>
+          </div>
+          <div class="settings">
+            <label>
+              用紙
+              <select id="defaultPaperSelect">
+                <option value="a4">A4</option>
+                <option value="letter">Letter</option>
+                <option value="image">画像サイズ</option>
+              </select>
+            </label>
+            <label>
+              画質
+              <input id="defaultQualityRange" type="range" min="0.55" max="0.95" value="0.82" step="0.01" />
+            </label>
+            <label>
+              仕上げ
+              <select id="defaultFilterSelect">
+                <option value="scan">スキャン</option>
+                <option value="ink">インク</option>
+                <option value="color">カラー</option>
+                <option value="gray">グレー</option>
+                <option value="bw">白黒</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <div class="homeDock">
+          <button id="newScanBtn" class="primaryDock" type="button">撮影開始</button>
+          <label class="dockButton">
+            インポート
+            <input id="homeFileInput" type="file" accept="image/*" multiple />
+          </label>
+        </div>
+      </section>
+
+      <section class="captureScreen screen" id="captureScreen" hidden>
+        <video id="camera" playsinline muted></video>
+        <svg id="liveOverlay" class="liveOverlay" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg>
+        <div class="cameraFallback" id="cameraFallback">
+          <strong>カメラ待機中</strong>
+          <span>GitHub PagesなどのHTTPS環境でカメラが使えます。</span>
+        </div>
+        <div class="captureTop">
+          <button id="closeCaptureBtn" class="roundButton" type="button">×</button>
+          <select id="flashSelect" class="flashSelect">
+            <option value="off">フラッシュ オフ</option>
+            <option value="auto">フラッシュ 自動</option>
+            <option value="on">フラッシュ オン</option>
+          </select>
+        </div>
+        <button id="captureBtn" class="shutterButton" type="button" disabled aria-label="撮影"></button>
+        <button id="reviewFromCaptureBtn" class="reviewBubble" type="button" disabled>
+          <span id="captureCount">0</span>
+        </button>
+      </section>
+
+      <section class="editScreen screen" id="editScreen" hidden>
+        <header class="workHeader">
+          <button id="cancelEditBtn" class="ghostButton" type="button">戻る</button>
+          <h1>補正</h1>
+          <button id="autoDetectBtn" type="button">自動</button>
+        </header>
+        <div class="canvasWrap" id="canvasWrap">
+          <canvas id="editCanvas"></canvas>
+          <svg id="editOverlay" class="editOverlay" aria-hidden="true"></svg>
+        </div>
+        <div class="editTools">
+          <label>
+            仕上げ
+            <select id="filterSelect">
+              <option value="scan">スキャン</option>
+              <option value="ink">インク</option>
+              <option value="color">カラー</option>
+              <option value="gray">グレー</option>
+              <option value="bw">白黒</option>
+            </select>
+          </label>
+          <label>
+            明るさ
+            <input id="brightnessRange" type="range" min="-40" max="55" value="0" step="1" />
+          </label>
+          <label>
+            くっきり
+            <input id="contrastRange" type="range" min="0" max="55" value="18" step="1" />
+          </label>
+        </div>
+        <div class="editActions">
+          <button id="addAndShootBtn" type="button">追加して撮影</button>
+          <button id="addAndReviewBtn" class="primaryAction" type="button">追加画面へ</button>
+        </div>
+      </section>
+
+      <section class="reviewScreen screen" id="reviewScreen" hidden>
+        <header class="workHeader">
+          <button id="backToHomeBtn" class="ghostButton" type="button">×</button>
+          <div>
+            <h1>追加</h1>
+            <p id="reviewStatus">PDFに追加するページを確認できます。</p>
+          </div>
+          <button id="shareBtn" class="primarySmall" type="button" disabled>共有</button>
+        </header>
+        <div class="controls">
+          <button id="backToCaptureBtn" type="button">撮影を続ける</button>
+          <label class="fileButton">
+            インポート
+            <input id="fileInput" type="file" accept="image/*" multiple />
+          </label>
+          <button id="downloadBtn" type="button" disabled>PDF保存</button>
+          <button id="jpegBtn" type="button" disabled>JPEG保存</button>
+        </div>
+        <div class="settings">
+          <label>
+            用紙
+            <select id="paperSelect">
+              <option value="a4">A4</option>
+              <option value="letter">Letter</option>
+              <option value="image">画像サイズ</option>
+            </select>
+          </label>
+          <label>
+            画質
+            <input id="qualityRange" type="range" min="0.55" max="0.95" value="0.82" step="0.01" />
+          </label>
+        </div>
+        <ol id="pageList" class="pageList"></ol>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
