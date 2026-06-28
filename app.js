@@ -13,6 +13,7 @@ const liveOverlay = $("liveOverlay");
 const editCanvas = $("editCanvas");
 const editOverlay = $("editOverlay");
 const pageList = $("pageList");
+const thumbList = $("thumbList");
 const historyList = $("historyList");
 const emptyHistory = $("emptyHistory");
 const homeStatus = $("homeStatus");
@@ -21,7 +22,7 @@ const captureCount = $("captureCount");
 
 const historyKey = "scanToPdf.history.v2";
 const settingsKey = "scanToPdf.settings.v2";
-const defaultSettings = { paper: "a4", quality: "0.88", filter: "scan", brightness: "0", contrast: "8" };
+const defaultSettings = { paper: "a4", quality: "0.88", filter: "document", brightness: "0", contrast: "8" };
 const points = ["tl", "tr", "br", "bl"];
 const edges = [
   ["top", "tl", "tr"],
@@ -62,6 +63,7 @@ $("shareBtn").addEventListener("click", sharePdf);
 $("downloadBtn").addEventListener("click", downloadPdf);
 $("jpegBtn").addEventListener("click", downloadJpeg);
 $("flashSelect").addEventListener("change", updateFlash);
+$("captureModeSelect").addEventListener("change", updateCaptureMode);
 $("paperSelect").addEventListener("change", updateProjectSettings);
 $("filterSelect").addEventListener("change", updateEditPreview);
 $("brightnessRange").addEventListener("input", updateEditPreview);
@@ -74,6 +76,8 @@ window.addEventListener("resize", () => {
 init();
 
 function init() {
+  appSettings = normalizeSettings(appSettings);
+  $("captureModeSelect").value = captureModeValue(appSettings.filter);
   renderHistory();
   showOnly("home");
 }
@@ -105,6 +109,11 @@ function showReview() {
   showOnly("review");
   renderPages();
   updateReviewStatus();
+}
+
+function updateCaptureMode() {
+  appSettings = normalizeSettings({ ...appSettings, filter: $("captureModeSelect").value });
+  localStorage.setItem(settingsKey, JSON.stringify(appSettings));
 }
 
 function showReviewOrHome() {
@@ -307,6 +316,7 @@ function openEdit(canvas, corners, pageId = null) {
     corners: corners || defaultCorners(canvas.width, canvas.height),
     viewMode: "crop",
   };
+  appSettings = normalizeSettings(appSettings);
   $("filterSelect").value = appSettings.filter;
   $("brightnessRange").value = appSettings.brightness;
   $("contrastRange").value = appSettings.contrast;
@@ -470,10 +480,11 @@ function updateEditSettings() {
   if (!editing) return;
   appSettings = {
     ...appSettings,
-    filter: $("filterSelect").value,
+    filter: normalizeFilter($("filterSelect").value),
     brightness: $("brightnessRange").value,
     contrast: $("contrastRange").value,
   };
+  $("captureModeSelect").value = captureModeValue(appSettings.filter);
   localStorage.setItem(settingsKey, JSON.stringify(appSettings));
 }
 
@@ -501,6 +512,7 @@ function commitEdit(destination) {
 
 function renderPages() {
   pageList.innerHTML = "";
+  thumbList.innerHTML = "";
   pages.forEach((page, index) => {
     const li = document.createElement("li");
     li.className = "pageItem";
@@ -517,6 +529,18 @@ function renderPages() {
     );
     li.append(img, tools);
     pageList.appendChild(li);
+
+    const thumbItem = document.createElement("li");
+    const thumb = document.createElement("button");
+    thumb.type = "button";
+    thumb.className = "thumbButton";
+    thumb.addEventListener("click", () => li.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" }));
+    const thumbImg = document.createElement("img");
+    thumbImg.src = page.processed.toDataURL("image/jpeg", 0.52);
+    thumbImg.alt = `${index + 1}ページ`;
+    thumb.append(thumbImg);
+    thumbItem.appendChild(thumb);
+    thumbList.appendChild(thumbItem);
   });
   $("downloadBtn").disabled = pages.length === 0;
   $("jpegBtn").disabled = pages.length === 0;
@@ -561,6 +585,8 @@ function updateReviewStatus() {
 }
 
 function updateProjectSettings() {
+  appSettings = { ...appSettings, paper: $("paperSelect").value };
+  localStorage.setItem(settingsKey, JSON.stringify(appSettings));
   lastPdfBlob = null;
   saveProject();
 }
@@ -581,10 +607,24 @@ function currentSettings() {
 
 function loadSettings() {
   try {
-    return { ...defaultSettings, ...JSON.parse(localStorage.getItem(settingsKey)) };
+    return normalizeSettings({ ...defaultSettings, ...JSON.parse(localStorage.getItem(settingsKey)) });
   } catch (error) {
     return { ...defaultSettings };
   }
+}
+
+function normalizeSettings(settings) {
+  return { ...defaultSettings, ...settings, filter: normalizeFilter(settings.filter) };
+}
+
+function normalizeFilter(filter) {
+  if (filter === "scan") return "document";
+  if (filter === "color") return "photo";
+  return filter || "document";
+}
+
+function captureModeValue(filter) {
+  return ["document", "whiteboard", "receipt", "photo"].includes(filter) ? filter : "document";
 }
 
 function loadHistory() {
@@ -648,6 +688,7 @@ function renderHistory() {
     actions.className = "historyActions";
     actions.append(
       toolButton("開く", () => openProject(project.id)),
+      toolButton("名前変更", () => renameProject(project.id)),
       toolButton("削除", () => deleteProject(project.id), false, "historyDelete"),
     );
     li.append(openButton, more, actions);
@@ -682,6 +723,17 @@ function deleteProject(id) {
   renderHistory();
 }
 
+function renameProject(id) {
+  const project = history.find((item) => item.id === id);
+  if (!project) return;
+  const title = prompt("履歴名", project.title);
+  if (!title?.trim()) return;
+  project.title = title.trim();
+  project.updatedAt = Date.now();
+  saveHistory();
+  renderHistory();
+}
+
 function clearHistory() {
   history = [];
   saveHistory();
@@ -704,7 +756,8 @@ function dataUrlToCanvas(dataUrl) {
 }
 
 function applySettingsToEdit(settings) {
-  $("filterSelect").value = settings.filter;
+  const normalized = normalizeSettings(settings);
+  $("filterSelect").value = normalized.filter;
   $("brightnessRange").value = settings.brightness;
   $("contrastRange").value = settings.contrast;
 }
@@ -950,7 +1003,7 @@ function sample(src, w, h, x, y, out, offset) {
 }
 
 function applyFilter(canvas) {
-  const mode = $("filterSelect").value;
+  const mode = normalizeFilter($("filterSelect").value);
   const brightness = Number($("brightnessRange").value);
   const contrast = Number($("contrastRange").value);
   const out = document.createElement("canvas");
@@ -966,12 +1019,27 @@ function applyFilter(canvas) {
     let g = (image.data[i + 1] - 128) * factor + 128 + brightness;
     let b = (image.data[i + 2] - 128) * factor + 128 + brightness;
     const gray = r * 0.299 + g * 0.587 + b * 0.114;
-    if (mode === "gray") r = g = b = gray;
-    if (mode === "scan") {
-      const paperLift = gray > 188 ? gray + (255 - gray) * 0.28 : gray;
-      const textPreserve = paperLift < 176 ? paperLift * 0.96 + 3 : paperLift;
-      r = g = b = clamp(textPreserve, 0, 255);
+    if (mode === "photo") {
+      image.data[i] = clamp(r, 0, 255);
+      image.data[i + 1] = clamp(g, 0, 255);
+      image.data[i + 2] = clamp(b, 0, 255);
+      continue;
     }
+    if (mode === "document") {
+      const lift = gray > 205 ? 10 : gray > 180 ? 5 : 0;
+      r = clamp(r + lift, 0, 255);
+      g = clamp(g + lift, 0, 255);
+      b = clamp(b + lift, 0, 255);
+    }
+    if (mode === "receipt") {
+      const receiptGray = gray > 205 ? gray + (255 - gray) * 0.18 : gray * 0.98 + 4;
+      r = g = b = clamp(receiptGray, 0, 255);
+    }
+    if (mode === "whiteboard") {
+      const boardGray = gray > 188 ? gray + (255 - gray) * 0.36 : gray * 0.92 + 6;
+      r = g = b = clamp(boardGray, 0, 255);
+    }
+    if (mode === "gray") r = g = b = gray;
     if (mode === "ink") {
       const ink = gray > 210 ? 255 : clamp(gray * 1.08 - 8, 0, 255);
       r = g = b = ink;

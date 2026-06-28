@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <title>Scan to PDF</title>
-    <link rel="stylesheet" href="styles.css?v=20260629-3" />
+    <link rel="stylesheet" href="styles.css?v=20260629-4" />
   </head>
   <body>
     <main class="app">
@@ -50,6 +50,12 @@
             <option value="auto">フラッシュ 自動</option>
             <option value="on">フラッシュ オン</option>
           </select>
+          <select id="captureModeSelect" class="flashSelect">
+            <option value="document">文書</option>
+            <option value="whiteboard">ホワイトボード</option>
+            <option value="receipt">領収書</option>
+            <option value="photo">写真</option>
+          </select>
         </div>
         <button id="captureBtn" class="shutterButton" type="button" disabled aria-label="撮影"></button>
         <button id="reviewFromCaptureBtn" class="reviewBubble" type="button" disabled>
@@ -75,9 +81,11 @@
           <label>
             仕上げ
             <select id="filterSelect">
-              <option value="scan">スキャン</option>
+              <option value="document">文書</option>
+              <option value="whiteboard">ホワイトボード</option>
+              <option value="receipt">領収書</option>
+              <option value="photo">写真</option>
               <option value="ink">インク</option>
-              <option value="color">カラー</option>
               <option value="gray">グレー</option>
               <option value="bw">白黒</option>
             </select>
@@ -108,6 +116,7 @@
           <button id="shareBtn" class="primarySmall" type="button" disabled>共有</button>
         </header>
         <ol id="pageList" class="pageList"></ol>
+        <ol id="thumbList" class="thumbList"></ol>
         <div class="reviewDock">
           <label>
             用紙
@@ -128,6 +137,6 @@
       </section>
     </main>
 
-    <script src="app.js?v=20260629-3"></script>
+    <script src="app.js?v=20260629-4"></script>
   </body>
 </html>
