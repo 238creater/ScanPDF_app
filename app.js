@@ -21,7 +21,7 @@ const captureCount = $("captureCount");
 
 const historyKey = "scanToPdf.history.v2";
 const settingsKey = "scanToPdf.settings.v2";
-const defaultSettings = { paper: "a4", quality: "0.82", filter: "scan", brightness: "0", contrast: "8" };
+const defaultSettings = { paper: "a4", quality: "0.88", filter: "scan", brightness: "0", contrast: "8" };
 const points = ["tl", "tr", "br", "bl"];
 const edges = [
   ["top", "tl", "tr"],
@@ -34,6 +34,8 @@ let stream = null;
 let torchOn = false;
 let liveTimer = null;
 let liveCorners = null;
+let liveTargetCorners = null;
+let liveAnimation = null;
 let pages = [];
 let editing = null;
 let drag = null;
@@ -46,8 +48,6 @@ let lastPdfBlob = null;
 $("newScanBtn").addEventListener("click", () => startProject(true));
 $("homeFileInput").addEventListener("change", addHomeFiles);
 $("fileInput").addEventListener("change", addFiles);
-$("clearHistoryBtn").addEventListener("click", clearHistory);
-$("resetSettingsBtn").addEventListener("click", resetSettings);
 $("closeCaptureBtn").addEventListener("click", showReviewOrHome);
 $("captureBtn").addEventListener("click", capturePhoto);
 $("reviewFromCaptureBtn").addEventListener("click", showReview);
@@ -55,6 +55,7 @@ $("backToCaptureBtn").addEventListener("click", showCapture);
 $("backToHomeBtn").addEventListener("click", showHome);
 $("cancelEditBtn").addEventListener("click", cancelEdit);
 $("autoDetectBtn").addEventListener("click", autoDetectEdit);
+$("viewModeBtn").addEventListener("click", toggleEditView);
 $("addAndShootBtn").addEventListener("click", () => commitEdit("capture"));
 $("addAndReviewBtn").addEventListener("click", () => commitEdit("review"));
 $("shareBtn").addEventListener("click", sharePdf);
@@ -62,13 +63,9 @@ $("downloadBtn").addEventListener("click", downloadPdf);
 $("jpegBtn").addEventListener("click", downloadJpeg);
 $("flashSelect").addEventListener("change", updateFlash);
 $("paperSelect").addEventListener("change", updateProjectSettings);
-$("qualityRange").addEventListener("input", updateProjectSettings);
 $("filterSelect").addEventListener("change", updateEditPreview);
 $("brightnessRange").addEventListener("input", updateEditPreview);
 $("contrastRange").addEventListener("input", updateEditPreview);
-$("defaultPaperSelect").addEventListener("change", updateDefaultSettings);
-$("defaultQualityRange").addEventListener("input", updateDefaultSettings);
-$("defaultFilterSelect").addEventListener("change", updateDefaultSettings);
 window.addEventListener("resize", () => {
   drawEdit();
   drawLiveOverlay();
@@ -77,7 +74,6 @@ window.addEventListener("resize", () => {
 init();
 
 function init() {
-  applySettingsToControls(appSettings, $("defaultPaperSelect"), $("defaultQualityRange"), $("defaultFilterSelect"));
   renderHistory();
   showOnly("home");
 }
@@ -125,7 +121,12 @@ function showHome() {
 }
 
 async function startCamera() {
-  if (stream) return;
+  if (stream) {
+    cameraFallback.hidden = true;
+    $("captureBtn").disabled = false;
+    startLiveDetection();
+    return;
+  }
   if (!navigator.mediaDevices?.getUserMedia) {
     cameraFallback.hidden = false;
     return;
@@ -159,12 +160,17 @@ function stopCamera() {
 
 function startLiveDetection() {
   stopLiveDetection();
-  liveTimer = window.setInterval(detectLiveFrame, 360);
+  liveTimer = window.setInterval(detectLiveFrame, 180);
+  animateLiveCorners();
 }
 
 function stopLiveDetection() {
   if (liveTimer) window.clearInterval(liveTimer);
+  if (liveAnimation) cancelAnimationFrame(liveAnimation);
   liveTimer = null;
+  liveAnimation = null;
+  liveTargetCorners = null;
+  liveOverlay.innerHTML = "";
 }
 
 function detectLiveFrame() {
@@ -176,19 +182,24 @@ function detectLiveFrame() {
   canvas.getContext("2d").drawImage(camera, 0, 0, canvas.width, canvas.height);
   const detected = detectDocumentCorners(canvas, true);
   if (detected) {
-    liveCorners = scaleCorners(detected, 1 / scale);
+    liveTargetCorners = scaleCorners(detected, 1 / scale);
+    if (!liveCorners) liveCorners = structuredClone(liveTargetCorners);
+  }
+}
+
+function animateLiveCorners() {
+  if (liveTargetCorners) {
+    liveCorners = liveCorners ? mixCorners(liveCorners, liveTargetCorners, 0.16) : structuredClone(liveTargetCorners);
     drawLiveOverlay();
   }
+  liveAnimation = requestAnimationFrame(animateLiveCorners);
 }
 
 function drawLiveOverlay() {
   liveOverlay.innerHTML = "";
   if (!liveCorners || !camera.videoWidth) return;
   liveOverlay.setAttribute("viewBox", `0 0 ${camera.videoWidth} ${camera.videoHeight}`);
-  const c = liveCorners;
-  const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-  polygon.setAttribute("points", `${c.tl.x},${c.tl.y} ${c.tr.x},${c.tr.y} ${c.br.x},${c.br.y} ${c.bl.x},${c.bl.y}`);
-  liveOverlay.appendChild(polygon);
+  drawCornerMarks(liveOverlay, liveCorners, Math.min(camera.videoWidth, camera.videoHeight) * 0.055, "liveCorner");
 }
 
 async function updateFlash() {
@@ -294,12 +305,13 @@ function openEdit(canvas, corners, pageId = null) {
     pageId,
     source: canvas,
     corners: corners || defaultCorners(canvas.width, canvas.height),
+    viewMode: "crop",
   };
   $("filterSelect").value = appSettings.filter;
   $("brightnessRange").value = appSettings.brightness;
   $("contrastRange").value = appSettings.contrast;
   drawEdit();
-  updateEditSettings();
+  updateEditPreview();
 }
 
 function cancelEdit() {
@@ -317,29 +329,37 @@ function autoDetectEdit() {
   if (!editing) return;
   editing.corners = detectDocumentCorners(editing.source, false) || defaultCorners(editing.source.width, editing.source.height);
   drawEdit();
+  updateEditPreview();
 }
 
 function drawEdit() {
   if (!editing) return;
   const wrap = $("canvasWrap");
-  const source = editing.source;
-  const scale = Math.min(wrap.clientWidth / source.width, wrap.clientHeight / source.height);
-  const displayWidth = Math.round(source.width * scale);
-  const displayHeight = Math.round(source.height * scale);
-  editCanvas.width = source.width;
-  editCanvas.height = source.height;
+  const image = editing.viewMode === "crop" ? applyFilter(warpQuad(editing.source, editing.corners)) : editing.source;
+  const scale = Math.min(wrap.clientWidth / image.width, wrap.clientHeight / image.height);
+  const displayWidth = Math.round(image.width * scale);
+  const displayHeight = Math.round(image.height * scale);
+  editCanvas.width = image.width;
+  editCanvas.height = image.height;
   editCanvas.style.width = `${displayWidth}px`;
   editCanvas.style.height = `${displayHeight}px`;
   editOverlay.style.width = `${displayWidth}px`;
   editOverlay.style.height = `${displayHeight}px`;
   editOverlay.style.left = `${(wrap.clientWidth - displayWidth) / 2}px`;
   editOverlay.style.top = `${(wrap.clientHeight - displayHeight) / 2}px`;
-  editOverlay.setAttribute("viewBox", `0 0 ${source.width} ${source.height}`);
-  editCanvas.getContext("2d").drawImage(source, 0, 0, source.width, source.height);
+  editOverlay.setAttribute("viewBox", `0 0 ${image.width} ${image.height}`);
+  editCanvas.getContext("2d").drawImage(image, 0, 0, image.width, image.height);
+  $("viewModeBtn").textContent = editing.viewMode === "crop" ? "元写真" : "切取";
   drawEditOverlay();
 }
 
 function drawEditOverlay() {
+  if (editing.viewMode === "crop") {
+    editOverlay.innerHTML = "";
+    editOverlay.style.pointerEvents = "none";
+    return;
+  }
+  editOverlay.style.pointerEvents = "auto";
   const c = editing.corners;
   editOverlay.innerHTML = "";
   const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
@@ -370,7 +390,7 @@ function drawEditOverlay() {
 }
 
 function startOverlayDrag(event) {
-  if (!editing) return;
+  if (!editing || editing.viewMode !== "original") return;
   event.preventDefault();
   editOverlay.setPointerCapture(event.pointerId);
   const point = pointerToImage(event);
@@ -398,7 +418,14 @@ function moveOverlayDrag(event) {
 }
 
 function endOverlayDrag() {
+  if (drag) drawEdit();
   drag = null;
+}
+
+function toggleEditView() {
+  if (!editing) return;
+  editing.viewMode = editing.viewMode === "crop" ? "original" : "crop";
+  drawEdit();
 }
 
 function nearestHandle(point) {
@@ -436,6 +463,7 @@ function clampPoint(point) {
 
 function updateEditPreview() {
   updateEditSettings();
+  if (editing?.viewMode === "crop") drawEdit();
 }
 
 function updateEditSettings() {
@@ -537,37 +565,14 @@ function updateProjectSettings() {
   saveProject();
 }
 
-function updateDefaultSettings() {
-  appSettings = {
-    ...appSettings,
-    paper: $("defaultPaperSelect").value,
-    quality: $("defaultQualityRange").value,
-    filter: $("defaultFilterSelect").value,
-  };
-  localStorage.setItem(settingsKey, JSON.stringify(appSettings));
-}
-
-function resetSettings() {
-  appSettings = { ...defaultSettings };
-  localStorage.setItem(settingsKey, JSON.stringify(appSettings));
-  applySettingsToControls(appSettings, $("defaultPaperSelect"), $("defaultQualityRange"), $("defaultFilterSelect"));
-}
-
-function applySettingsToControls(settings, paper, quality, filter) {
-  paper.value = settings.paper;
-  quality.value = settings.quality;
-  filter.value = settings.filter;
-}
-
 function applySettingsToReview(settings) {
   $("paperSelect").value = settings.paper;
-  $("qualityRange").value = settings.quality;
 }
 
 function currentSettings() {
   return {
     paper: $("paperSelect").value,
-    quality: $("qualityRange").value,
+    quality: appSettings.quality,
     filter: $("filterSelect").value,
     brightness: $("brightnessRange").value,
     contrast: $("contrastRange").value,
@@ -638,8 +643,14 @@ function renderHistory() {
     const meta = document.createElement("span");
     meta.innerHTML = `<strong>${escapeHtml(project.title)}</strong><small>${project.pages.length}ページ ・ ${formatDate(project.updatedAt)}</small>`;
     openButton.append(thumb, meta);
-    const deleteButton = toolButton("削除", () => deleteProject(project.id), false, "historyDelete");
-    li.append(openButton, deleteButton);
+    const more = toolButton("...", () => li.classList.toggle("isOpen"), false, "historyMore");
+    const actions = document.createElement("div");
+    actions.className = "historyActions";
+    actions.append(
+      toolButton("開く", () => openProject(project.id)),
+      toolButton("削除", () => deleteProject(project.id), false, "historyDelete"),
+    );
+    li.append(openButton, more, actions);
     historyList.appendChild(li);
   });
 }
@@ -851,6 +862,32 @@ function scaleCorners(c, scale) {
   return result;
 }
 
+function mixCorners(current, next, amount) {
+  const result = {};
+  for (const name of points) {
+    result[name] = {
+      x: current[name].x + (next[name].x - current[name].x) * amount,
+      y: current[name].y + (next[name].y - current[name].y) * amount,
+    };
+  }
+  return result;
+}
+
+function drawCornerMarks(svg, c, length, className) {
+  const segments = [
+    `M ${c.tl.x + length} ${c.tl.y} L ${c.tl.x} ${c.tl.y} L ${c.tl.x} ${c.tl.y + length}`,
+    `M ${c.tr.x - length} ${c.tr.y} L ${c.tr.x} ${c.tr.y} L ${c.tr.x} ${c.tr.y + length}`,
+    `M ${c.br.x - length} ${c.br.y} L ${c.br.x} ${c.br.y} L ${c.br.x} ${c.br.y - length}`,
+    `M ${c.bl.x + length} ${c.bl.y} L ${c.bl.x} ${c.bl.y} L ${c.bl.x} ${c.bl.y - length}`,
+  ];
+  for (const segment of segments) {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", segment);
+    path.setAttribute("class", className);
+    svg.appendChild(path);
+  }
+}
+
 function defaultCorners(w, h) {
   return {
     tl: { x: w * 0.1, y: h * 0.09 },
@@ -922,7 +959,7 @@ function applyFilter(canvas) {
   const ctx = out.getContext("2d");
   ctx.drawImage(canvas, 0, 0);
   const image = ctx.getImageData(0, 0, out.width, out.height);
-  const factor = 1 + contrast / 95;
+  const factor = 1 + contrast / 130;
 
   for (let i = 0; i < image.data.length; i += 4) {
     let r = (image.data[i] - 128) * factor + 128 + brightness;
@@ -931,14 +968,15 @@ function applyFilter(canvas) {
     const gray = r * 0.299 + g * 0.587 + b * 0.114;
     if (mode === "gray") r = g = b = gray;
     if (mode === "scan") {
-      const lifted = gray > 170 ? gray + 20 : gray;
-      r = g = b = clamp((lifted - 128) * 1.08 + 142, 0, 255);
+      const paperLift = gray > 188 ? gray + (255 - gray) * 0.28 : gray;
+      const textPreserve = paperLift < 176 ? paperLift * 0.96 + 3 : paperLift;
+      r = g = b = clamp(textPreserve, 0, 255);
     }
     if (mode === "ink") {
-      const ink = gray > 198 ? 255 : clamp((gray - 68) * 1.35, 0, 255);
+      const ink = gray > 210 ? 255 : clamp(gray * 1.08 - 8, 0, 255);
       r = g = b = ink;
     }
-    if (mode === "bw") r = g = b = gray > 168 ? 255 : 28;
+    if (mode === "bw") r = g = b = gray > 184 ? 255 : 34;
     image.data[i] = clamp(r, 0, 255);
     image.data[i + 1] = clamp(g, 0, 255);
     image.data[i + 2] = clamp(b, 0, 255);
@@ -966,7 +1004,7 @@ async function sharePdf() {
 
 async function downloadJpeg() {
   if (!pages.length) return;
-  const blob = await canvasToBlob(pages[pages.length - 1].processed, "image/jpeg", Number($("qualityRange").value));
+  const blob = await canvasToBlob(pages[pages.length - 1].processed, "image/jpeg", Number(appSettings.quality));
   downloadBlob(blob, `scan-${dateName()}.jpg`);
 }
 
@@ -980,7 +1018,7 @@ function downloadBlob(blob, name) {
 }
 
 async function buildPdf(canvases) {
-  const quality = Number($("qualityRange").value);
+  const quality = Number(appSettings.quality);
   const objects = [];
   const kids = [];
   let nextId = 1;

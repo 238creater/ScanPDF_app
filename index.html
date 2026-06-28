@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <title>Scan to PDF</title>
-    <link rel="stylesheet" href="styles.css?v=20260628-2" />
+    <link rel="stylesheet" href="styles.css?v=20260629-3" />
   </head>
   <body>
     <main class="app">
@@ -22,41 +22,9 @@
         <section class="homeSection">
           <div class="sectionHeader">
             <h2>履歴</h2>
-            <button id="clearHistoryBtn" type="button">履歴削除</button>
           </div>
           <ol id="historyList" class="historyList"></ol>
           <p id="emptyHistory" class="emptyText">まだ履歴はありません。</p>
-        </section>
-
-        <section class="homeSection">
-          <div class="sectionHeader">
-            <h2>設定</h2>
-            <button id="resetSettingsBtn" type="button">初期化</button>
-          </div>
-          <div class="settings">
-            <label>
-              用紙
-              <select id="defaultPaperSelect">
-                <option value="a4">A4</option>
-                <option value="letter">Letter</option>
-                <option value="image">画像サイズ</option>
-              </select>
-            </label>
-            <label>
-              画質
-              <input id="defaultQualityRange" type="range" min="0.55" max="0.95" value="0.82" step="0.01" />
-            </label>
-            <label>
-              仕上げ
-              <select id="defaultFilterSelect">
-                <option value="scan">スキャン</option>
-                <option value="ink">インク</option>
-                <option value="color">カラー</option>
-                <option value="gray">グレー</option>
-                <option value="bw">白黒</option>
-              </select>
-            </label>
-          </div>
         </section>
 
         <div class="homeDock">
@@ -93,13 +61,17 @@
         <header class="workHeader">
           <button id="cancelEditBtn" class="ghostButton" type="button">戻る</button>
           <h1>補正</h1>
-          <button id="autoDetectBtn" type="button">自動</button>
+          <div class="headerActions">
+            <button id="viewModeBtn" type="button">元写真</button>
+            <button id="autoDetectBtn" type="button">自動</button>
+          </div>
         </header>
         <div class="canvasWrap" id="canvasWrap">
           <canvas id="editCanvas"></canvas>
           <svg id="editOverlay" class="editOverlay" aria-hidden="true"></svg>
         </div>
-        <div class="editTools">
+        <div class="editTray">
+          <div class="editTools">
           <label>
             仕上げ
             <select id="filterSelect">
@@ -118,10 +90,11 @@
             くっきり
             <input id="contrastRange" type="range" min="0" max="55" value="8" step="1" />
           </label>
-        </div>
-        <div class="editActions">
-          <button id="addAndShootBtn" type="button">追加して撮影</button>
-          <button id="addAndReviewBtn" class="primaryAction" type="button">追加画面へ</button>
+          </div>
+          <div class="editActions">
+            <button id="addAndShootBtn" type="button">追加して撮影</button>
+            <button id="addAndReviewBtn" class="primaryAction" type="button">追加画面へ</button>
+          </div>
         </div>
       </section>
 
@@ -134,16 +107,8 @@
           </div>
           <button id="shareBtn" class="primarySmall" type="button" disabled>共有</button>
         </header>
-        <div class="controls">
-          <button id="backToCaptureBtn" type="button">撮影を続ける</button>
-          <label class="fileButton">
-            インポート
-            <input id="fileInput" type="file" accept="image/*" multiple />
-          </label>
-          <button id="downloadBtn" type="button" disabled>PDF保存</button>
-          <button id="jpegBtn" type="button" disabled>JPEG保存</button>
-        </div>
-        <div class="settings">
+        <ol id="pageList" class="pageList"></ol>
+        <div class="reviewDock">
           <label>
             用紙
             <select id="paperSelect">
@@ -152,15 +117,17 @@
               <option value="image">画像サイズ</option>
             </select>
           </label>
-          <label>
-            画質
-            <input id="qualityRange" type="range" min="0.55" max="0.95" value="0.82" step="0.01" />
+          <button id="backToCaptureBtn" type="button">撮影</button>
+          <label class="fileButton">
+            追加
+            <input id="fileInput" type="file" accept="image/*" multiple />
           </label>
+          <button id="downloadBtn" type="button" disabled>PDF</button>
+          <button id="jpegBtn" type="button" disabled>JPEG</button>
         </div>
-        <ol id="pageList" class="pageList"></ol>
       </section>
     </main>
 
-    <script src="app.js?v=20260628-2"></script>
+    <script src="app.js?v=20260629-3"></script>
   </body>
 </html>
