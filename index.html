@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <title>Scan to PDF</title>
-    <link rel="stylesheet" href="styles.css?v=20260629-4" />
+    <link rel="stylesheet" href="styles.css?v=20260629-5" />
   </head>
   <body>
     <main class="app">
@@ -39,9 +39,9 @@
       <section class="captureScreen screen" id="captureScreen" hidden>
         <video id="camera" playsinline muted></video>
         <svg id="liveOverlay" class="liveOverlay" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg>
-        <div class="cameraFallback" id="cameraFallback">
-          <strong>カメラ待機中</strong>
-          <span>GitHub PagesなどのHTTPS環境でカメラが使えます。</span>
+        <div class="cameraFallback" id="cameraFallback" hidden>
+          <strong>カメラを開始できません</strong>
+          <span>ブラウザのカメラ許可を確認してください。</span>
         </div>
         <div class="captureTop">
           <button id="closeCaptureBtn" class="roundButton" type="button">×</button>
@@ -137,6 +137,6 @@
       </section>
     </main>
 
-    <script src="app.js?v=20260629-4"></script>
+    <script src="app.js?v=20260629-5"></script>
   </body>
 </html>

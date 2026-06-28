@@ -37,9 +37,11 @@ let liveTimer = null;
 let liveCorners = null;
 let liveTargetCorners = null;
 let liveAnimation = null;
+let liveMisses = 0;
 let pages = [];
 let editing = null;
 let drag = null;
+let editReturnScreen = "capture";
 let currentProjectId = null;
 let pendingCanvases = [];
 let history = loadHistory();
@@ -96,6 +98,7 @@ function showOnly(name) {
   Object.entries(screens).forEach(([key, screen]) => {
     screen.hidden = key !== name;
   });
+  if (name !== "capture") cameraFallback.hidden = true;
 }
 
 async function showCapture() {
@@ -164,7 +167,7 @@ function stopCamera() {
   stream = null;
   camera.srcObject = null;
   $("captureBtn").disabled = true;
-  cameraFallback.hidden = false;
+  cameraFallback.hidden = true;
 }
 
 function startLiveDetection() {
@@ -179,6 +182,7 @@ function stopLiveDetection() {
   liveTimer = null;
   liveAnimation = null;
   liveTargetCorners = null;
+  liveMisses = 0;
   liveOverlay.innerHTML = "";
 }
 
@@ -193,6 +197,14 @@ function detectLiveFrame() {
   if (detected) {
     liveTargetCorners = scaleCorners(detected, 1 / scale);
     if (!liveCorners) liveCorners = structuredClone(liveTargetCorners);
+    liveMisses = 0;
+  } else {
+    liveMisses += 1;
+    if (liveMisses > 4) {
+      liveTargetCorners = null;
+      liveCorners = null;
+      liveOverlay.innerHTML = "";
+    }
   }
 }
 
@@ -229,7 +241,7 @@ async function updateFlash() {
 async function capturePhoto() {
   if (!camera.videoWidth) return;
   const { canvas, offsetX, offsetY, scale } = captureVisibleVideoFrame();
-  const corners = liveCorners
+  const corners = liveCorners && liveTargetCorners
     ? translateCorners(liveCorners, offsetX, offsetY, scale, canvas.width, canvas.height)
     : detectDocumentCorners(canvas, false);
   stopLiveDetection();
@@ -278,6 +290,7 @@ async function addHomeFiles(event) {
 async function addFiles(event) {
   pendingCanvases.push(...(await filesToCanvases(event.target.files)));
   event.target.value = "";
+  editReturnScreen = "review";
   openNextPendingImage();
 }
 
@@ -309,6 +322,8 @@ function openNextPendingImage() {
 }
 
 function openEdit(canvas, corners, pageId = null) {
+  if (!screens.review.hidden) editReturnScreen = "review";
+  else if (!screens.capture.hidden) editReturnScreen = "capture";
   showOnly("edit");
   editing = {
     pageId,
@@ -327,7 +342,8 @@ function openEdit(canvas, corners, pageId = null) {
 function cancelEdit() {
   editing = null;
   if (pendingCanvases.length) openNextPendingImage();
-  else showReviewOrCapture();
+  else if (editReturnScreen === "review") showReview();
+  else showCapture();
 }
 
 function showReviewOrCapture() {
@@ -473,7 +489,8 @@ function clampPoint(point) {
 
 function updateEditPreview() {
   updateEditSettings();
-  if (editing?.viewMode === "crop") drawEdit();
+  if (editing) editing.viewMode = "crop";
+  drawEdit();
 }
 
 function updateEditSettings() {
@@ -573,6 +590,7 @@ function deletePage(index) {
   renderPages();
   saveProject();
   updateCount();
+  if (!pages.length) updateReviewStatus();
 }
 
 function updateCount() {
@@ -826,7 +844,8 @@ function largestDocumentComponent(cells, cols, rows, step, w, h) {
   const seen = new Uint8Array(cells.length);
   let best = null;
   const queue = [];
-  const minArea = w * h * 0.08;
+  const minArea = w * h * 0.055;
+  const maxArea = w * h * 0.82;
 
   for (let index = 0; index < cells.length; index++) {
     if (!cells[index] || seen[index]) continue;
@@ -863,10 +882,25 @@ function largestDocumentComponent(cells, cols, rows, step, w, h) {
       }
     }
 
-    const boxArea = (maxX - minX) * (maxY - minY);
+    const boxWidth = maxX - minX;
+    const boxHeight = maxY - minY;
+    const boxArea = boxWidth * boxHeight;
     const borderRatio = touches / Math.max(1, pointsList.length);
-    const score = pointsList.length * (borderRatio > 0.22 ? 0.25 : 1);
-    if (boxArea >= minArea && (!best || score > best.score)) {
+    const fillRatio = (pointsList.length * step * step) / Math.max(1, boxArea);
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const centerDistance = Math.hypot((centerX - w / 2) / w, (centerY - h / 2) / h);
+    const aspect = boxWidth / Math.max(1, boxHeight);
+    const looksLikeDocument =
+      boxArea >= minArea &&
+      boxArea <= maxArea &&
+      borderRatio < 0.1 &&
+      fillRatio > 0.22 &&
+      aspect > 0.28 &&
+      aspect < 3.8 &&
+      centerDistance < 0.38;
+    const score = pointsList.length * (1 - borderRatio) * (1 - centerDistance);
+    if (looksLikeDocument && (!best || score > best.score)) {
       best = { points: pointsList, score };
     }
   }
